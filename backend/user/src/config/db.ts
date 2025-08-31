@@ -12,7 +12,7 @@ const connectDB = async (mongoURI: string) => {
     await mongoose.connect(url, {
         dbName: "chatapp-microservice"
     });
-    console.log("MongoDB connected");
+    console.log("connected to MongoDB"); 
   } catch (err) {
     console.error(err);
     process.exit(1);
