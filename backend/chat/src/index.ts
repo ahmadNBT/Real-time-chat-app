@@ -1,7 +1,7 @@
 import express from "express";
 import dotenv from "dotenv";
 import connectDB from "./config/db.js";
-
+import cors from "cors";
 import chatRoutes from "./routes/chat.js";
 
 dotenv.config();
@@ -10,6 +10,7 @@ connectDB(process.env.MONGO_URI!);
 
 const app = express();
 app.use(express.json());
+app.use(cors());
 
 app.use("/api/v1", chatRoutes);
 

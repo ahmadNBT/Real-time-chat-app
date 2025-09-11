@@ -2,14 +2,19 @@
 
 import axios from "axios";
 import { ArrowRight, ChevronLeft, Loader2, Lock } from "lucide-react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { redirect, useRouter, useSearchParams } from "next/navigation";
 import React, { useEffect, useRef, useState } from "react";
 import Cookies from "js-cookie";
-import { user_service } from "@/context/AppContext";
+import { useAppData, user_service } from "@/context/AppContext";
+import Loading from "./Loading";
+import toast from "react-hot-toast";
 
 
 
 const VerifyOTP = () => {
+
+  const {isAuth, setIsAuth, setUser, loading:userLoading, fetchChats, fetchUser} = useAppData() 
+
   const [loading, setLoading] = useState(false);
 
   const [otp, setOtp] = useState<string[]>(["", "", "", "", "", ""]);
@@ -80,7 +85,7 @@ const VerifyOTP = () => {
             otp: otpString
         })
 
-        alert(data.message)
+        toast.success(data.message)
         Cookies.set("token", data.token, {
             expires: 7,
             secure: false,
@@ -89,7 +94,11 @@ const VerifyOTP = () => {
 
         setOtp(["", "", "", "", "", ""])
         inputRefs.current[0]?.focus()
-
+        setUser(data.user)
+        setIsAuth(true)
+        fetchChats()
+        fetchUser()
+        // router.push("/chat")
 
     } catch (error:any) {
         setError(error.response.data.message)
@@ -106,7 +115,7 @@ const VerifyOTP = () => {
     setError("")
     try {
         const {data} = await axios.post(`${user_service}/api/v1/login`, {email});
-        alert(data.message)
+        toast.success(data.message)
         setTimer(60)
     } catch (error:any) {
         setError(error.response.data.message)
@@ -115,6 +124,10 @@ const VerifyOTP = () => {
     }
   }
 
+  if(userLoading) return <Loading />
+
+
+  if(isAuth) redirect("/chat")
 
 
   return (
