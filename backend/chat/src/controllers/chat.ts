@@ -111,13 +111,16 @@ export const sendMessage = TryCatch(async (req: AuthenticatedRequest, res) => {
 
     const chat = await Chat.findById(chatId);
 
+    console.log(chat, "chat......");
+    
+
     if(!chat) {
         res.status(404).json({ message: "Chat not found" });
         return;
     }
 
-    const isUserInChat = await chat.users.some((userId) => {
-      userId.toString() === senderId.toString();
+    const isUserInChat = chat?.users?.some((userId) => {
+      return userId.toString() === senderId.toString();
     })
 
     if(!isUserInChat){
@@ -130,7 +133,7 @@ export const sendMessage = TryCatch(async (req: AuthenticatedRequest, res) => {
     );
 
     if(!otherUserId) {
-        res.status(400).json({ message: "User otherUser not found" });
+        res.status(400).json({ message: "otherUser not found" });
         return;
     }
 
@@ -175,4 +178,83 @@ export const sendMessage = TryCatch(async (req: AuthenticatedRequest, res) => {
     // Emit the message to the other user via Socket.io
 
     res.status(201).json({ sender: senderId, message: savedMessage })
+});
+
+
+export const getMesagesByChat = TryCatch(async (req: AuthenticatedRequest, res) => {
+    const userId = req.user?._id;
+    const { chatId } = req.params;
+
+    if(!userId) {
+        res.status(400).json({ message: "User not found" });
+        return;
+    }
+
+    if(!chatId){
+        res.status(400).json({ message: "Please provide chatId" });
+        return;
+    }
+
+    const chat = await Chat.findById(chatId);
+
+    if(!chat) {
+        res.status(404).json({ message: "Chat not found" });
+        return;
+    }
+
+    const isUserInChat = chat?.users?.some((id) => id.toString() === userId.toString());
+
+    if(!isUserInChat){
+        res.status(403).json({ message: "You are not a member of this chat" });
+        return;
+    }
+
+    const messagesToMarkSeen = await Message.find({ 
+      chatId: chatId, 
+      seen: false, 
+      sender: { $ne: userId } 
+    });
+
+    await Message.updateMany(
+      { 
+        chatId: chatId,
+        seen: false,
+        sender: { $ne: userId }
+      },
+      {
+        seen: true,
+        seenAt: new Date(),
+      }
+    );  
+
+
+    const messages = await Message.find({ chatId: chatId }).sort({ createdAt: 1 });
+
+    const otherUserId = chat.users.find(
+      (id) => id.toString() !== userId.toString()
+    );
+
+    try {
+      const {data} = await axios.get(
+        `${process.env.USER_SERVICE}/api/v1/user/${otherUserId}`
+      );
+
+      if(!otherUserId) {
+        res.status(400).json({ message: "otherUser not found" });
+        return;
+      }
+
+      // socket work
+
+      res.status(200).json({ 
+        messages, 
+        user: data.user
+     });
+
+    } catch (error) {
+      console.log(error);
+      res.status(500).json({ messages, user: {_id: otherUserId, name: "Unknown User"} });
+      
+    }
+    
 });
