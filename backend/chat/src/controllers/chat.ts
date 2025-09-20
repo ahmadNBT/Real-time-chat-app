@@ -3,6 +3,7 @@ import TryCatch from "../config/TryCatch.js";
 import type { AuthenticatedRequest } from "../middlewares/isAuth.js";
 import { Chat } from "../models/chat.js";
 import { Message } from "../models/messages.js";
+import { getRecieverSocketId, io } from "../config/socket.js";
 
 export const createNewChat = TryCatch(
   async (req: AuthenticatedRequest, res) => {
@@ -110,8 +111,6 @@ export const sendMessage = TryCatch(async (req: AuthenticatedRequest, res) => {
     }
 
     const chat = await Chat.findById(chatId);
-
-    console.log(chat, "chat......");
     
 
     if(!chat) {
@@ -137,15 +136,24 @@ export const sendMessage = TryCatch(async (req: AuthenticatedRequest, res) => {
         return;
     }
 
-
     // socket io setup 
+    const recieverSocketId = getRecieverSocketId(otherUserId.toString());
+    let isRecieverInChatRoom = false;
+
+    if(recieverSocketId){
+      const recieverSocket = io.sockets.sockets.get(recieverSocketId);
+      if(recieverSocket && recieverSocket.rooms.has(chatId)){
+        isRecieverInChatRoom = true;
+      }
+    }
+
 
 
     let messageData:any = {
-      chatId: chatId,
+      chatId: chatId, 
       sender: senderId,
-      seen: false,
-      seenAt: undefined,
+      seen: isRecieverInChatRoom,
+      seenAt: isRecieverInChatRoom ? new Date() : undefined,
     };
 
     if(imageFile){
@@ -176,6 +184,25 @@ export const sendMessage = TryCatch(async (req: AuthenticatedRequest, res) => {
 
 
     // Emit the message to the other user via Socket.io
+    io.to(chatId).emit("newMessage", savedMessage);
+    if(recieverSocketId){
+      io.to(recieverSocketId).emit("newMessage", savedMessage);
+    }
+
+    const senderSocketId = getRecieverSocketId(senderId.toString());
+    if(senderSocketId){
+      io.to(senderSocketId).emit("newMessage", savedMessage);
+    }
+
+
+    if(isRecieverInChatRoom && senderSocketId){
+      io.to(senderSocketId).emit("messagesSeen", {
+        chatId: chatId,
+        seenBy: otherUserId,
+        messageIds: [savedMessage._id],
+      });
+    }
+
 
     res.status(201).json({ sender: senderId, message: savedMessage })
 });
@@ -211,8 +238,8 @@ export const getMesagesByChat = TryCatch(async (req: AuthenticatedRequest, res) 
 
     const messagesToMarkSeen = await Message.find({ 
       chatId: chatId, 
+      sender: { $ne: userId },
       seen: false, 
-      sender: { $ne: userId } 
     });
 
     await Message.updateMany(
@@ -230,6 +257,7 @@ export const getMesagesByChat = TryCatch(async (req: AuthenticatedRequest, res) 
 
     const messages = await Message.find({ chatId: chatId }).sort({ createdAt: 1 });
 
+
     const otherUserId = chat.users.find(
       (id) => id.toString() !== userId.toString()
     );
@@ -245,6 +273,16 @@ export const getMesagesByChat = TryCatch(async (req: AuthenticatedRequest, res) 
       }
 
       // socket work
+      if(messagesToMarkSeen.length > 0){
+        const otherUserSocketId = getRecieverSocketId(otherUserId.toString());
+        if(otherUserSocketId){
+          io.to(otherUserSocketId).emit("messagesSeen", {
+            chatId: chatId,
+            seenBy: userId,
+            messageIds: messagesToMarkSeen.map((msg) => msg._id),
+          });
+        }
+      }
 
       res.status(200).json({ 
         messages, 
